@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Water Quality Monitor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        
+        .status.connected {
+            background: #10b981;
+            color: white;
+        }
+        
+        .status.disconnected {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .sensors-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .sensor-card {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+        }
+        
+        .sensor-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .sensor-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .sensor-icon {
+            font-size: 2.5em;
+            margin-right: 15px;
+        }
+        
+        .sensor-title {
+            font-size: 1.1em;
+            color: #64748b;
+            font-weight: 600;
+        }
+        
+        .sensor-value {
+            font-size: 3em;
+            font-weight: bold;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .sensor-unit {
+            font-size: 0.5em;
+            color: #64748b;
+            font-weight: normal;
+        }
+        
+        .sensor-status {
+            text-align: center;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+        
+        .status-excellent { background: #dcfce7; color: #166534; }
+        .status-good { background: #dbeafe; color: #1e40af; }
+        .status-fair { background: #fef3c7; color: #92400e; }
+        .status-poor { background: #fee2e2; color: #991b1b; }
+        
+        .ph-value { color: #8b5cf6; }
+        .tds-value { color: #06b6d4; }
+        .turbidity-value { color: #f59e0b; }
+        .temp-value { color: #ef4444; }
+        .flow-value { color: #10b981; }
+        
+        .gauge {
+            width: 100%;
+            height: 10px;
+            background: #e5e7eb;
+            border-radius: 10px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+        
+        .gauge-fill {
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.5s ease;
+        }
+        
+        .info-card {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .info-item {
+            text-align: center;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 10px;
+        }
+        
+        .info-label {
+            font-size: 0.9em;
+            color: #64748b;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #334155;
+        }
+        
+        .last-update {
+            text-align: center;
+            color: white;
+            font-size: 0.9em;
+            margin-top: 20px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Water Quality Monitor</h1>
+            <div class="status" id="connectionStatus">Disconnected</div>
+        </div>
+        
+        <div class="sensors-grid">
+            <!-- pH Sensor -->
+            <div class="sensor-card">
+                <div class="sensor-header">
+                    <!-- <div class="sensor-icon">🧪</div> -->
+                    <div class="sensor-title">pH Level</div>
+                </div>
+                <div class="sensor-value ph-value">
+                    <span id="phValue">--</span>
+                </div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="phGauge" style="background: linear-gradient(to right, #8b5cf6, #a78bfa); width: 0%;"></div>
+                </div>
+                <div class="sensor-status" id="phStatus">Waiting...</div>
+            </div>
+            
+            <!-- TDS Sensor -->
+            <div class="sensor-card">
+                <div class="sensor-header">
+                    <!-- <div class="sensor-icon">⚗️</div> -->
+                    <div class="sensor-title">TDS (Dissolved Solids)</div>
+                </div>
+                <div class="sensor-value tds-value">
+                    <span id="tdsValue">--</span>
+                    <span class="sensor-unit">ppm</span>
+                </div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="tdsGauge" style="background: linear-gradient(to right, #06b6d4, #22d3ee); width: 0%;"></div>
+                </div>
+                <div class="sensor-status" id="tdsStatus">Waiting...</div>
+            </div>
+            
+            <!-- Turbidity Sensor -->
+            <div class="sensor-card">
+                <div class="sensor-header">
+                    <!-- <div class="sensor-icon">🌫️</div> -->
+                    <div class="sensor-title">Turbidity</div>
+                </div>
+                <div class="sensor-value turbidity-value">
+                    <span id="turbidityValue">--</span>
+                    <span class="sensor-unit">NTU</span>
+                </div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="turbidityGauge" style="background: linear-gradient(to right, #f59e0b, #fbbf24); width: 0%;"></div>
+                </div>
+                <div class="sensor-status" id="turbidityStatus">Waiting...</div>
+            </div>
+            
+            <!-- Temperature Sensor -->
+            <div class="sensor-card">
+                <div class="sensor-header">
+                    <!-- <div class="sensor-icon">🌡️</div> -->
+                    <div class="sensor-title">Temperature</div>
+                </div>
+                <div class="sensor-value temp-value">
+                    <span id="tempValue">--</span>
+                    <span class="sensor-unit">°C</span>
+                </div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="tempGauge" style="background: linear-gradient(to right, #ef4444, #f87171); width: 0%;"></div>
+                </div>
+                <div class="sensor-status" id="tempStatus">Waiting...</div>
+            </div>
+            
+            <!-- Flow Rate Sensor -->
+            <div class="sensor-card">
+                <div class="sensor-header">
+                    <!-- <div class="sensor-icon">💨</div> -->
+                    <div class="sensor-title">Flow Rate</div>
+                </div>
+                <div class="sensor-value flow-value">
+                    <span id="flowValue">--</span>
+                    <span class="sensor-unit">L/min</span>
+                </div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="flowGauge" style="background: linear-gradient(to right, #10b981, #34d399); width: 0%;"></div>
+                </div>
+                <div class="sensor-status" id="flowStatus">Waiting...</div>
+            </div>
+        </div>
+        
+        <div class="info-card">
+            <h3 style="margin-bottom: 15px; color: #334155;">System Information</h3>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Messages Received</div>
+                    <div class="info-value" id="messageCount">0</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Water Quality</div>
+                    <div class="info-value" id="overallStatus">Unknown</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Last Update</div>
+                    <div class="info-value" id="lastUpdate" style="font-size: 1em;">Never</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="last-update">
+            Monitoring water quality parameters in real-time
+        </div>
+    </div>
+
+    <script>
+        // MQTT Configuration
+        const brokerUrl = "broker.hivemq.com";
+        const port = 8884;
+        const topic = "water/quality/sensor1";
+        
+        let client;
+        let messageCount = 0;
+        
+        function connectMQTT() {
+            const clientId = "WebClient-" + Math.random().toString(16).substr(2, 8);
+            client = new Paho.MQTT.Client(brokerUrl, port, "/mqtt", clientId);
+            
+            client.onConnectionLost = onConnectionLost;
+            client.onMessageArrived = onMessageArrived;
+            
+            client.connect({
+                onSuccess: onConnect,
+                useSSL: true,
+                onFailure: onFailure
+            });
+        }
+        
+        function onConnect() {
+            console.log("Connected to MQTT broker");
+            document.getElementById("connectionStatus").textContent = "Connected";
+            document.getElementById("connectionStatus").className = "status connected";
+            client.subscribe(topic);
+        }
+        
+        function onFailure(message) {
+            console.log("Connection failed: " + message.errorMessage);
+            document.getElementById("connectionStatus").textContent = "Disconnected";
+            document.getElementById("connectionStatus").className = "status disconnected";
+            setTimeout(connectMQTT, 5000);
+        }
+        
+        function onConnectionLost(responseObject) {
+            if (responseObject.errorCode !== 0) {
+                console.log("Connection lost: " + responseObject.errorMessage);
+                document.getElementById("connectionStatus").textContent = "Disconnected";
+                document.getElementById("connectionStatus").className = "status disconnected";
+                setTimeout(connectMQTT, 5000);
+            }
+        }
+        
+        function onMessageArrived(message) {
+            try {
+                const data = JSON.parse(message.payloadString);
+                updateDisplay(data);
+                messageCount++;
+                document.getElementById("messageCount").textContent = messageCount;
+            } catch (e) {
+                console.error("Error parsing message:", e);
+            }
+        }
+        
+        function updateDisplay(data) {
+            // Update pH
+            updatePH(data.ph || 7.0);
+            
+            // Update TDS
+            updateTDS(data.tds || 0);
+            
+            // Update Turbidity
+            updateTurbidity(data.turbidity || 0);
+            
+            // Update Temperature
+            updateTemperature(data.temperature || 25);
+            
+            // Update Flow Rate
+            updateFlowRate(data.flowrate || 0);
+            
+            // Update timestamp
+            const now = new Date();
+            document.getElementById("lastUpdate").textContent = now.toLocaleTimeString();
+            
+            // Calculate overall water quality
+            calculateOverallQuality(data);
+        }
+        
+        function updatePH(ph) {
+            document.getElementById("phValue").textContent = ph.toFixed(2);
+            
+            const percentage = (ph / 14) * 100;
+            document.getElementById("phGauge").style.width = percentage + "%";
+            
+            let status = "";
+            if (ph >= 6.5 && ph <= 8.5) {
+                status = "Excellent";
+                document.getElementById("phStatus").className = "sensor-status status-excellent";
+            } else if (ph >= 6.0 && ph <= 9.0) {
+                status = "Good";
+                document.getElementById("phStatus").className = "sensor-status status-good";
+            } else if (ph >= 5.5 && ph <= 9.5) {
+                status = "Fair";
+                document.getElementById("phStatus").className = "sensor-status status-fair";
+            } else {
+                status = "Poor";
+                document.getElementById("phStatus").className = "sensor-status status-poor";
+            }
+            document.getElementById("phStatus").textContent = status;
+        }
+        
+        function updateTDS(tds) {
+            document.getElementById("tdsValue").textContent = tds.toFixed(0);
+            
+            const percentage = Math.min((tds / 1000) * 100, 100);
+            document.getElementById("tdsGauge").style.width = percentage + "%";
+            
+            let status = "";
+            if (tds < 300) {
+                status = "Excellent";
+                document.getElementById("tdsStatus").className = "sensor-status status-excellent";
+            } else if (tds < 600) {
+                status = "Good";
+                document.getElementById("tdsStatus").className = "sensor-status status-good";
+            } else if (tds < 900) {
+                status = "Fair";
+                document.getElementById("tdsStatus").className = "sensor-status status-fair";
+            } else {
+                status = "Poor";
+                document.getElementById("tdsStatus").className = "sensor-status status-poor";
+            }
+            document.getElementById("tdsStatus").textContent = status;
+        }
+        
+        function updateTurbidity(turbidity) {
+            document.getElementById("turbidityValue").textContent = turbidity.toFixed(1);
+            
+            const percentage = Math.min((turbidity / 100) * 100, 100);
+            document.getElementById("turbidityGauge").style.width = percentage + "%";
+            
+            let status = "";
+            if (turbidity < 1) {
+                status = "Excellent";
+                document.getElementById("turbidityStatus").className = "sensor-status status-excellent";
+            } else if (turbidity < 5) {
+                status = "Good";
+                document.getElementById("turbidityStatus").className = "sensor-status status-good";
+            } else if (turbidity < 10) {
+                status = "Fair";
+                document.getElementById("turbidityStatus").className = "sensor-status status-fair";
+            } else {
+                status = "Poor";
+                document.getElementById("turbidityStatus").className = "sensor-status status-poor";
+            }
+            document.getElementById("turbidityStatus").textContent = status;
+        }
+        
+        function updateTemperature(temp) {
+            document.getElementById("tempValue").textContent = temp.toFixed(1);
+            
+            const percentage = Math.min(((temp - 0) / 50) * 100, 100);
+            document.getElementById("tempGauge").style.width = percentage + "%";
+            
+            let status = "";
+            if (temp >= 15 && temp <= 30) {
+                status = "Optimal";
+                document.getElementById("tempStatus").className = "sensor-status status-excellent";
+            } else if (temp >= 10 && temp <= 35) {
+                status = "Good";
+                document.getElementById("tempStatus").className = "sensor-status status-good";
+            } else if (temp >= 5 && temp <= 40) {
+                status = "Fair";
+                document.getElementById("tempStatus").className = "sensor-status status-fair";
+            } else {
+                status = "Warning";
+                document.getElementById("tempStatus").className = "sensor-status status-poor";
+            }
+            document.getElementById("tempStatus").textContent = status;
+        }
+        
+        function updateFlowRate(flow) {
+            document.getElementById("flowValue").textContent = flow.toFixed(2);
+            
+            const percentage = Math.min((flow / 10) * 100, 100);
+            document.getElementById("flowGauge").style.width = percentage + "%";
+            
+            let status = "";
+            if (flow > 5) {
+                status = "High Flow";
+                document.getElementById("flowStatus").className = "sensor-status status-excellent";
+            } else if (flow > 2) {
+                status = "Normal";
+                document.getElementById("flowStatus").className = "sensor-status status-good";
+            } else if (flow > 0.5) {
+                status = "Low Flow";
+                document.getElementById("flowStatus").className = "sensor-status status-fair";
+            } else {
+                status = "No Flow";
+                document.getElementById("flowStatus").className = "sensor-status status-poor";
+            }
+            document.getElementById("flowStatus").textContent = status;
+        }
+        
+        function calculateOverallQuality(data) {
+            let score = 0;
+            let total = 5;
+            
+            const ph = data.ph || 7.0;
+            if (ph >= 6.5 && ph <= 8.5) score++;
+            
+            const tds = data.tds || 0;
+            if (tds < 600) score++;
+            
+            const turbidity = data.turbidity || 0;
+            if (turbidity < 5) score++;
+            
+            const temp = data.temperature || 25;
+            if (temp >= 15 && temp <= 30) score++;
+            
+            const flow = data.flowrate || 0;
+            if (flow > 0.5) score++;
+            
+            const percentage = (score / total) * 100;
+            let quality = "";
+            
+            if (percentage >= 80) {
+                quality = "Excellent";
+            } else if (percentage >= 60) {
+                quality = "Good";
+            } else if (percentage >= 40) {
+                quality = "Fair";
+            } else {
+                quality = "Poor";
+            }
+            
+            document.getElementById("overallStatus").textContent = quality;
+        }
+        
+        connectMQTT();
+    </script>
+</body>
+</html>

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Water Monitor Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        
+        .status.connected {
+            background: #10b981;
+            color: white;
+        }
+        
+        .status.disconnected {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+        }
+        
+        .sensor-reading {
+            text-align: center;
+            margin: 30px 0;
+        }
+        
+        .water-level-display {
+            font-size: 4em;
+            font-weight: bold;
+            color: #667eea;
+            margin: 20px 0;
+        }
+        
+        .percentage {
+            font-size: 2em;
+            color: #764ba2;
+        }
+        
+        .water-tank {
+            width: 200px;
+            height: 300px;
+            border: 4px solid #667eea;
+            border-radius: 10px;
+            margin: 30px auto;
+            position: relative;
+            overflow: hidden;
+            background: #f0f0f0;
+        }
+        
+        .water-fill {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: linear-gradient(to top, #3b82f6, #60a5fa);
+            transition: height 0.5s ease;
+        }
+        
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .metric {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .metric-label {
+            font-size: 0.9em;
+            color: #64748b;
+            margin-bottom: 5px;
+        }
+        
+        .metric-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #334155;
+        }
+        
+        .last-update {
+            text-align: center;
+            color: #64748b;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💧 Water Monitor</h1>
+            <div class="status" id="connectionStatus">Disconnected</div>
+        </div>
+        
+        <div class="card">
+            <div class="sensor-reading">
+                <h2>Current Water Level</h2>
+                <div class="water-level-display">
+                    <span id="waterLevel">--</span> <small>cm</small>
+                </div>
+                <div class="percentage">
+                    <span id="waterPercentage">--</span>%
+                </div>
+                
+                <div class="water-tank">
+                    <div class="water-fill" id="waterFill"></div>
+                </div>
+            </div>
+            
+            <div class="metrics">
+                <div class="metric">
+                    <div class="metric-label">Status</div>
+                    <div class="metric-value" id="status">Waiting</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Messages</div>
+                    <div class="metric-value" id="messageCount">0</div>
+                </div>
+            </div>
+            
+            <div class="last-update">
+                Last update: <span id="lastUpdate">Never</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // MQTT Configuration
+        const brokerUrl = "broker.hivemq.com";
+        const port = 8884; // WebSocket Secure port
+        const topic = "water/monitor/sensor1";
+        
+        let client;
+        let messageCount = 0;
+        
+        function connectMQTT() {
+            const clientId = "WebClient-" + Math.random().toString(16).substr(2, 8);
+            client = new Paho.MQTT.Client(brokerUrl, port, "/mqtt", clientId);
+            
+            client.onConnectionLost = onConnectionLost;
+            client.onMessageArrived = onMessageArrived;
+            
+            client.connect({
+                onSuccess: onConnect,
+                useSSL: true,
+                onFailure: onFailure
+            });
+        }
+        
+        function onConnect() {
+            console.log("Connected to MQTT broker");
+            document.getElementById("connectionStatus").textContent = "Connected";
+            document.getElementById("connectionStatus").className = "status connected";
+            
+            client.subscribe(topic);
+            console.log("Subscribed to: " + topic);
+        }
+        
+        function onFailure(message) {
+            console.log("Connection failed: " + message.errorMessage);
+            document.getElementById("connectionStatus").textContent = "Disconnected";
+            document.getElementById("connectionStatus").className = "status disconnected";
+            
+            setTimeout(connectMQTT, 5000);
+        }
+        
+        function onConnectionLost(responseObject) {
+            if (responseObject.errorCode !== 0) {
+                console.log("Connection lost: " + responseObject.errorMessage);
+                document.getElementById("connectionStatus").textContent = "Disconnected";
+                document.getElementById("connectionStatus").className = "status disconnected";
+                
+                setTimeout(connectMQTT, 5000);
+            }
+        }
+        
+        function onMessageArrived(message) {
+            try {
+                const data = JSON.parse(message.payloadString);
+                updateDisplay(data);
+                messageCount++;
+                document.getElementById("messageCount").textContent = messageCount;
+            } catch (e) {
+                console.error("Error parsing message:", e);
+            }
+        }
+        
+        function updateDisplay(data) {
+            const level = data.level || 0;
+            const percentage = data.percentage || 0;
+            
+            document.getElementById("waterLevel").textContent = level.toFixed(1);
+            document.getElementById("waterPercentage").textContent = percentage.toFixed(0);
+            
+            const waterFill = document.getElementById("waterFill");
+            waterFill.style.height = percentage + "%";
+            
+            let status = "Normal";
+            if (percentage < 20) {
+                status = "Low";
+            } else if (percentage > 80) {
+                status = "High";
+            }
+            document.getElementById("status").textContent = status;
+            
+            const now = new Date();
+            document.getElementById("lastUpdate").textContent = now.toLocaleTimeString();
+        }
+        
+        // Connect on page load
+        connectMQTT();
+    </script>
+</body>
+</html>
